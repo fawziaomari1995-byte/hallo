@@ -169,6 +169,7 @@ const initDb = () => {
       )
     `);
 
+    // Add missing columns to events table
     db.all("PRAGMA table_info(events)", (err, cols) => {
       if (err) {
         console.error('Unable to read table schema:', err.message);
@@ -194,8 +195,29 @@ const initDb = () => {
       if (!hasImage) {
         db.run('ALTER TABLE events ADD COLUMN image TEXT');
       }
+
+      // After adding columns, check if we need to insert sample data
+      db.get('SELECT COUNT(*) AS count FROM events', (err, row) => {
+        if (err) {
+          console.error('Database count error:', err.message);
+          return;
+        }
+
+        if (row.count === 0) {
+          const stmt = db.prepare(`INSERT INTO events (title, description, location, date, category, archived, image) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          const sampleEvents = [
+            ['مهرجان الفنون التراثية', 'مهرجان يعرض إنتاج الحرف اليدوية والعروض الموسيقية.', 'مركز محافظة درعا', '2026-06-15', 'ثقافي', 0, '/uploads/sample-event.svg'],
+            ['سباق جري المدينة', 'سباق جري مفتوح لجميع الأعمار لدعم النشاط الرياضي.', 'شارع السوق', '2026-06-22', 'رياضي', 0, null],
+            ['ندوة تعليمية', 'محاضرة حول التراث المحلي وفرص التنمية الشبابية.', 'مكتبة درعا العامة', '2026-07-01', 'تعليمي', 0, null],
+            ['مهرجان الربيع الماضي', 'مهرجان ربيعي احتفل به العام الماضي.', 'حديقة المدينة', '2024-04-15', 'ثقافي', 1, null]
+          ];
+          sampleEvents.forEach((event) => stmt.run(event));
+          stmt.finalize();
+        }
+      });
     });
 
+    // Add missing columns to users table
     db.all("PRAGMA table_info(users)", (err, cols) => {
       if (err) {
         console.error('Unable to read users table schema:', err.message);
@@ -217,31 +239,14 @@ const initDb = () => {
       const hasActivationExpires = cols.some((col) => col.name === 'activationExpires');
       if (!hasActivationExpires) {
         db.run("ALTER TABLE users ADD COLUMN activationExpires INTEGER");
-      }      const hasResetPasswordToken = cols.some((col) => col.name === 'resetPasswordToken');
+      }
+      const hasResetPasswordToken = cols.some((col) => col.name === 'resetPasswordToken');
       if (!hasResetPasswordToken) {
         db.run('ALTER TABLE users ADD COLUMN resetPasswordToken TEXT');
       }
       const hasResetPasswordExpires = cols.some((col) => col.name === 'resetPasswordExpires');
       if (!hasResetPasswordExpires) {
         db.run('ALTER TABLE users ADD COLUMN resetPasswordExpires INTEGER');
-      }    });
-
-    db.get('SELECT COUNT(*) AS count FROM events', (err, row) => {
-      if (err) {
-        console.error('Database count error:', err.message);
-        return;
-      }
-
-      if (row.count === 0) {
-        const stmt = db.prepare(`INSERT INTO events (title, description, location, date, category, archived, image) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-        const sampleEvents = [
-          ['مهرجان الفنون التراثية', 'مهرجان يعرض إنتاج الحرف اليدوية والعروض الموسيقية.', 'مركز محافظة درعا', '2026-06-15', 'ثقافي', 0, '/uploads/sample-event.svg'],
-          ['سباق جري المدينة', 'سباق جري مفتوح لجميع الأعمار لدعم النشاط الرياضي.', 'شارع السوق', '2026-06-22', 'رياضي', 0, null],
-          ['ندوة تعليمية', 'محاضرة حول التراث المحلي وفرص التنمية الشبابية.', 'مكتبة درعا العامة', '2026-07-01', 'تعليمي', 0, null],
-          ['مهرجان الربيع الماضي', 'مهرجان ربيعي احتفل به العام الماضي.', 'حديقة المدينة', '2024-04-15', 'ثقافي', 1, null]
-        ];
-        sampleEvents.forEach((event) => stmt.run(event));
-        stmt.finalize();
       }
     });
   });
