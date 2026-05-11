@@ -5,16 +5,18 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const dbFile = path.join(__dirname, 'db', 'events.db');
+const dbFile = process.env.RENDER ? '/tmp/events.db' : path.join(__dirname, 'db', 'events.db');
 
 // Configure multer for file uploads
+const uploadsDir = process.env.RENDER ? '/tmp/uploads' : path.join(__dirname, 'public', 'uploads');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, 'public', 'uploads'));
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -28,6 +30,13 @@ app.use(express.static(path.join(__dirname, 'public'), {
   lastModified: false,
   maxAge: 0
 }));
+if (process.env.RENDER) {
+  app.use('/uploads', express.static('/tmp/uploads', {
+    etag: false,
+    lastModified: false,
+    maxAge: 0
+  }));
+}
 app.use(express.json());
 
 const users = [
@@ -124,6 +133,11 @@ const db = new sqlite3.Database(dbFile, (err) => {
 });
 
 const initDb = () => {
+  // Ensure uploads directory exists
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
   db.serialize(() => {
     db.run(`
       CREATE TABLE IF NOT EXISTS events (
