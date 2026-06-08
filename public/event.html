@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تفاصيل الفعالية - فعاليات درعا</title>
+  <link rel="stylesheet" href="styles.css?v=2" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <div>
+        <a href="/" class="button secondary small">الرئيسية</a>
+        <a href="/profile.html" class="button secondary small">صفحتي</a>
+      </div>
+      <h1>تفاصيل الفعالية</h1>
+    </div>
+  </header>
+
+  <main class="container page-panel">
+    <section class="panel panel-highlight" id="eventDetailsPanel">
+      <div id="eventLoading" class="loading-state">جارٍ تحميل تفاصيل الفعالية...</div>
+      <div id="eventDetails" class="event-details hidden">
+        <div class="section-header">
+          <h2 id="eventTitle"></h2>
+          <p id="eventMeta" class="muted-text"></p>
+        </div>
+        <div id="eventMedia" class="event-media-gallery"></div>
+        <div class="event-detail-grid">
+          <div class="event-detail-block">
+            <h3>نبذة عن الفعالية</h3>
+            <p id="eventDescription"></p>
+          </div>
+          <div class="event-detail-block">
+            <h3>معلومات سريعة</h3>
+            <ul class="detail-list">
+              <li><strong>التاريخ:</strong> <span id="eventDate"></span></li>
+              <li><strong>المنطقة:</strong> <span id="eventDistrict"></span></li>
+              <li><strong>الميزانية المتوقعة:</strong> <span id="eventBudget"></span></li>
+              <li><strong>نوع الفعالية:</strong> <span id="eventCategory"></span></li>
+              <li><strong>عدد المهتمين:</strong> <span id="eventAttendance"></span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="countdown-card">
+          <h3>الوقت المتبقي</h3>
+          <div id="eventCountdown" class="countdown-timer">--:--:--</div>
+        </div>
+        <div class="map-block">
+          <h3>الموقع الجغرافي</h3>
+          <div id="eventMap" class="event-map"></div>
+        </div>
+        <section class="ticket-pricing-section">
+          <h3>أسعار التذاكر</h3>
+          <div id="ticketPrices" class="ticket-prices"></div>
+          <div class="button-row">
+            <a id="bookButton" class="button primary" href="#">احجز الآن</a>
+          </div>
+        </section>
+        <section class="reviews-section">
+          <div class="section-header">
+            <h3>أضف تقييمك</h3>
+          </div>
+          <div id="reviewForm" class="panel panel-secondary hidden">
+            <div class="form-group">
+              <label for="reviewRating">تقييم</label>
+              <select id="reviewRating" class="filter-select">
+                <option value="">اختر التقييم</option>
+                <option value="5">⭐️⭐️⭐️⭐️⭐️</option>
+                <option value="4">⭐️⭐️⭐️⭐️</option>
+                <option value="3">⭐️⭐️⭐️</option>
+                <option value="2">⭐️⭐️</option>
+                <option value="1">⭐️</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="reviewContent">مراجعة</label>
+              <textarea id="reviewContent" rows="4" placeholder="اكتب رأيك عن الفعالية"></textarea>
+            </div>
+            <button id="submitReviewBtn" type="button" class="button primary">إرسال المراجعة</button>
+            <p id="reviewMessage" class="error-text"></p>
+          </div>
+          <p id="reviewAccessMessage" class="muted-text hidden"></p>
+          <div id="existingComments" class="comments-list"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>© 2026 فعالية درعا</p>
+  </footer>
+  <script src="/event.js"></script>
+</body>
+</html>

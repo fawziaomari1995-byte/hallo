@@ -32,6 +32,7 @@
         </button>
         <h1>موقع فعاليات محافظة درعا</h1>
         <div class="header-actions">
+          <a href="/profile.html" class="button secondary small" id="profileLink">صفحتي</a>
           <button type="button" class="button secondary small hidden" id="installButton">تثبيت التطبيق</button>
           <button type="button" class="button secondary small" id="themeToggle" title="تبديل الوضع المظلم">🌙</button>
         </div>
@@ -73,7 +74,7 @@
         </div>
       </form>
       <p id="loginError" class="error-text"></p>
-      <p class="login-hint">المستخدمان الجاهزان: <strong>admin/admin123</strong> و <strong>user/user123</strong></p>
+      <p class="login-hint">إذا كان لديك حساب، استخدم بياناتك الشخصية لتسجيل الدخول.</p>
       <p class="login-hint">ليس لديك حساب؟ <a href="#" id="showRegisterLink">إنشاء حساب جديد</a></p>
       <p class="login-hint">لم يصلك رابط التفعيل؟ <a href="#" id="showResendLink">إعادة إرسال رابط التفعيل</a></p>
       <p class="login-hint">نسيت كلمة المرور؟ <a href="#" id="showForgotLink">إعادة تعيين كلمة المرور</a></p>
@@ -184,7 +185,11 @@
             <div class="form-group">
               <label for="location">المكان</label>
               <input type="text" id="location" name="location" placeholder="مثال: ساحة البلدية" required />
-              <button type="button" class="button small secondary" id="geocodeBtn">البحث في الخريطة</button>
+              <button type="button" class="button small secondary" id="geocodeBtn">تحديد الموقع بالخريطة</button>
+            </div>
+            <div class="form-group">
+              <label for="district">المنطقة داخل المحافظة</label>
+              <input type="text" id="district" name="district" placeholder="مثال: الحي الغربي" />
             </div>
             <div class="form-group">
               <label for="latitude">خط العرض</label>
@@ -195,6 +200,7 @@
               <input type="number" id="longitude" name="longitude" step="any" placeholder="36.1033" />
             </div>
           </div>
+          <p class="form-hint">إذا كانت الإحداثيات فارغة، استخدم زر "البحث في الخريطة" لتحديد الموقع أو أدخِل القيم يدويًا.</p>
           <div class="form-row">
             <div class="form-group">
               <label for="date">التاريخ</label>
@@ -213,19 +219,164 @@
                 <option value="تجاري">تجاري</option>
               </select>
             </div>
+            <div class="form-group">
+              <label for="budgetCents">الميزانية المتوقعة ($)</label>
+              <input type="number" id="budgetCents" name="budgetCents" placeholder="مثال: 50" min="0" />
+            </div>
           </div>
           <div class="form-group">
-            <label for="image">صورة الفعالية (اختياري)</label>
-            <input type="file" id="image" name="image" accept="image/*" />
-            <small class="form-hint">يمكنك رفع صورة للفعالية (JPG, PNG, GIF)</small>
+            <label for="mediaFiles">وسائط الفعالية (اختياري)</label>
+            <input type="file" id="mediaFiles" name="mediaFiles" accept="image/*,video/*" multiple />
+            <small class="form-hint">يمكنك رفع صور أو مقاطع فيديو قصيرة للفعالية.</small>
+          </div>
+          <div class="media-preview" id="mediaPreviewContainer"></div>
+          <div class="form-group">
+            <label for="videoUrl">رابط فيديو خارجي (يوتيوب أو فيميو)</label>
+            <input type="url" id="videoUrl" name="videoUrl" placeholder="https://" />
+            <small class="form-hint">أضف رابط فيديو توضيحي إن وجد.</small>
+          </div>
+          <div class="form-group checkbox-toggle">
+            <label class="checkbox-label">
+              <input type="checkbox" id="isHybrid" name="isHybrid" />
+              <span>تمكين البث المباشر (Hybrid Event)</span>
+            </label>
+            <p class="form-hint">تتيح هذه الخاصية بيع تذاكر افتراضية للحضور عن بُعد.</p>
+          </div>
+          <div class="form-group">
+            <label for="streamUrl">رابط البث المباشر</label>
+            <input type="url" id="streamUrl" name="streamUrl" placeholder="https://" />
+          </div>
+          <div class="form-group">
+            <label for="virtualPriceCents">سعر التذكرة الافتراضية (بـ cents)</label>
+            <input type="number" id="virtualPriceCents" name="virtualPriceCents" value="1500" min="0" />
+            <small class="form-hint">مثال: 1500 يُمثّل $15.00.</small>
           </div>
           <div class="button-row">
             <button type="submit" class="button primary" id="submitButton">إرسال الفعالية</button>
             <button type="button" class="button secondary" id="cancelEditBtn" hidden>إلغاء التعديل</button>
           </div>
         </form>
+
+        <section class="analytics-section" id="analyticsSection">
+          <div class="section-header">
+            <h3>لوحة تحليلات المنظمين</h3>
+            <p class="muted-text">رصد فوري لمبيعات التذاكر، الإيرادات، ونسب الحضور عبر واجهة منظمة.</p>
+          </div>
+          <div class="analytics-grid">
+            <div class="analytic-card">
+              <div class="analytic-card-title">التذاكر المباعة</div>
+              <div class="analytic-card-value" id="analyticsTicketsSold">0</div>
+            </div>
+            <div class="analytic-card">
+              <div class="analytic-card-title">الإيرادات الكلية</div>
+              <div class="analytic-card-value" id="analyticsRevenue">$0</div>
+            </div>
+            <div class="analytic-card">
+              <div class="analytic-card-title">التذاكر الافتراضية</div>
+              <div class="analytic-card-value" id="analyticsVirtualTickets">0</div>
+            </div>
+            <div class="analytic-card">
+              <div class="analytic-card-title">تذاكر الجلوس</div>
+              <div class="analytic-card-value" id="analyticsSeatTickets">0</div>
+            </div>
+          </div>
+          <div class="analytics-charts">
+            <div class="chart-card">
+              <h4>الإيرادات خلال 7 أيام</h4>
+              <div id="revenueTimelineChart" class="chart-bars"></div>
+            </div>
+            <div class="chart-card">
+              <h4>توزيع التذاكر حسب النوع</h4>
+              <div id="ticketTypeChart" class="chart-bars"></div>
+            </div>
+            <div class="chart-card">
+              <h4>نسب الحضور</h4>
+              <div id="attendanceRatioChart" class="chart-bars"></div>
+            </div>
+            <div class="chart-card">
+              <h4>أهم الفعاليات مبيعاً</h4>
+              <div id="topEventsList" class="top-events-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="admin-users-section">
+          <div class="section-header">
+            <h3>إدارة المستخدمين</h3>
+            <div class="users-controls">
+              <button type="button" class="button secondary small" id="refreshUsersBtn">تحديث المستخدمين</button>
+              <span class="muted-text">قم بتفعيل المستخدمين أو تغيير أدوارهم أو حذف حسابات غير المرغوب فيها.</span>
+            </div>
+          </div>
+
+          <form id="createUserForm" class="create-user-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="adminUsername">اسم المستخدم</label>
+                <input type="text" id="adminUsername" name="username" placeholder="اسم المستخدم" required />
+              </div>
+              <div class="form-group">
+                <label for="adminEmail">البريد الإلكتروني</label>
+                <input type="email" id="adminEmail" name="email" placeholder="example@mail.com" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="adminPassword">كلمة المرور</label>
+                <input type="password" id="adminPassword" name="password" placeholder="كلمة مرور قوية" required />
+              </div>
+              <div class="form-group">
+                <label for="adminRole">الدور</label>
+                <select id="adminRole" name="role">
+                  <option value="normal">مستخدم عادي</option>
+                  <option value="admin">مدير</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row form-row-inline">
+              <label class="checkbox-label"><input type="checkbox" id="adminActivate" checked /> تفعيل الحساب مباشرة (اتركه غير محدد لإرسال رابط التفعيل)</label>
+            </div>
+            <div class="button-row">
+              <button type="submit" class="button primary">إنشاء مستخدم جديد</button>
+            </div>
+            <p id="createUserMessage" class="error-text"></p>
+          </form>
+
+          <div class="users-table-wrapper">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>اسم المستخدم</th>
+                  <th>البريد الإلكتروني</th>
+                  <th>الدور</th>
+                  <th>الحالة</th>
+                  <th>الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr><td colspan="5" class="empty-state">جارٍ تحميل المستخدمين...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p id="usersMessage" class="error-text"></p>
+        </section>
       </section>
 
+      <section class="panel highlights-panel">
+        <div class="section-header">
+          <h2>فعاليات هذا الأسبوع</h2>
+          <p class="muted-text">أهم الفعاليات الأقرب تاريخاً والمناسبة للأسبوع الجاري.</p>
+        </div>
+        <div id="weeklyEvents" class="events-grid highlight-cards"></div>
+      </section>
+      <section class="panel highlights-panel trending-panel">
+        <div class="section-header">
+          <h2>الأكثر رواجاً</h2>
+          <p class="muted-text">الفعاليات الأعلى مبيعاً للتذاكر والمفضلة من الجمهور.</p>
+        </div>
+        <div id="trendingEvents" class="events-grid highlight-cards"></div>
+      </section>
       <section class="panel">
         <div class="section-header">
           <h2>قائمة الفعاليات</h2>
@@ -258,6 +409,28 @@
               <option value="">جميع التواريخ</option>
               <option value="upcoming">القادمة فقط</option>
               <option value="past">الماضية فقط</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="districtFilter">المنطقة داخل المحافظة:</label>
+            <input type="text" id="districtFilter" class="filter-input" placeholder="مثلاً: الحي الغربي" />
+          </div>
+          <div class="filter-group">
+            <label for="budgetFilter">تصفية الميزانية:</label>
+            <select id="budgetFilter" class="filter-select">
+              <option value="">كل الميزانيات</option>
+              <option value="under50">أقل من 50$</option>
+              <option value="under100">أقل من 100$</option>
+              <option value="over100">أكثر من 100$</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="attendanceFilter">حالة RSVP:</label>
+            <select id="attendanceFilter" class="filter-select">
+              <option value="">كل الحالات</option>
+              <option value="attending">سأحضر</option>
+              <option value="maybe">ربما</option>
+              <option value="declined">غير مهتم</option>
             </select>
           </div>
           <div class="filter-group">
@@ -338,6 +511,38 @@
       </div>
     </div>
   </div>
+  <div id="ticketModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="ticketModalTitle">حجز التذكرة</h3>
+        <button type="button" class="modal-close" id="closeTicketModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="ticketEventInfo" class="modal-note"></p>
+        <div class="form-group checkbox-toggle">
+          <label class="checkbox-label">
+            <input type="checkbox" id="isVirtualTicket" />
+            <span>تذكرة افتراضية للبث المباشر</span>
+          </label>
+        </div>
+        <div id="streamDetails" class="form-group hidden">
+          <label for="streamUrlInput">رابط البث المباشر</label>
+          <input type="url" id="streamUrlInput" readonly />
+        </div>
+        <div id="seatMapContainer" class="seat-map-container"></div>
+        <div class="form-group">
+          <label for="ticketPriceInput">السعر بالـ cents</label>
+          <input type="number" id="ticketPriceInput" min="0" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="button primary" id="reserveTicketBtn">تأكيد الحجز</button>
+          <button type="button" class="button secondary" id="cancelTicketBtn">إلغاء</button>
+        </div>
+        <div id="ticketResult" class="ticket-result"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="mapModal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
@@ -354,6 +559,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=4"></script>
 </body>
 </html>

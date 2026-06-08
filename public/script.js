@@ -34,10 +34,24 @@ const logoutButton = document.getElementById('logoutButton');
 const eventsList = document.getElementById('eventsList');
 const eventCount = document.getElementById('eventCount');
 const eventForm = document.getElementById('eventForm');
+const latitudeInput = document.getElementById('latitude');
+const longitudeInput = document.getElementById('longitude');
 const formTitle = document.querySelector('.panel-highlight h2');
 const submitButton = document.getElementById('submitButton');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
+const mediaPreviewContainer = document.getElementById('mediaPreviewContainer');
+const videoUrlInput = document.getElementById('videoUrl');
 const adminPanel = document.getElementById('adminPanel');
+const usersTableBody = document.getElementById('usersTableBody');
+const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+const createUserForm = document.getElementById('createUserForm');
+const adminUsernameInput = document.getElementById('adminUsername');
+const adminEmailInput = document.getElementById('adminEmail');
+const adminPasswordInput = document.getElementById('adminPassword');
+const adminRoleSelect = document.getElementById('adminRole');
+const adminActivateCheckbox = document.getElementById('adminActivate');
+const createUserMessage = document.getElementById('createUserMessage');
+const usersMessage = document.getElementById('usersMessage');
 const registerPanel = document.getElementById('registerPanel');
 const registerForm = document.getElementById('registerForm');
 const regUsernameInput = document.getElementById('regUsername');
@@ -66,7 +80,12 @@ const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
 const categoryFilter = document.getElementById('categoryFilter');
 const dateFilter = document.getElementById('dateFilter');
+const districtFilter = document.getElementById('districtFilter');
+const budgetFilter = document.getElementById('budgetFilter');
+const attendanceFilter = document.getElementById('attendanceFilter');
 const showArchived = document.getElementById('showArchived');
+const weeklyEvents = document.getElementById('weeklyEvents');
+const trendingEvents = document.getElementById('trendingEvents');
 
 // Theme Elements
 const themeToggle = document.getElementById('themeToggle');
@@ -80,6 +99,33 @@ const closeNotificationModalBtn = document.getElementById('closeNotificationModa
 const saveNotificationSettingsBtn = document.getElementById('saveNotificationSettings');
 const cancelNotificationSettingsBtn = document.getElementById('cancelNotificationSettings');
 const mapModal = document.getElementById('mapModal');
+const geocodeBtn = document.getElementById('geocodeBtn');
+const ticketModal = document.getElementById('ticketModal');
+const ticketModalTitle = document.getElementById('ticketModalTitle');
+const ticketEventInfo = document.getElementById('ticketEventInfo');
+const isVirtualTicketCheckbox = document.getElementById('isVirtualTicket');
+const streamDetails = document.getElementById('streamDetails');
+const streamUrlInput = document.getElementById('streamUrlInput');
+const seatMapContainer = document.getElementById('seatMapContainer');
+const ticketPriceInput = document.getElementById('ticketPriceInput');
+const reserveTicketBtn = document.getElementById('reserveTicketBtn');
+const cancelTicketBtn = document.getElementById('cancelTicketBtn');
+const closeTicketModal = document.getElementById('closeTicketModal');
+const ticketResult = document.getElementById('ticketResult');
+
+let currentTicketEvent = null;
+let currentTicketSeatMap = null;
+let selectedSeatInfo = { seatCategory: null, seatNumber: null };
+let analyticsIntervalId = null;
+
+const analyticsTicketsSold = document.getElementById('analyticsTicketsSold');
+const analyticsRevenue = document.getElementById('analyticsRevenue');
+const analyticsVirtualTickets = document.getElementById('analyticsVirtualTickets');
+const analyticsSeatTickets = document.getElementById('analyticsSeatTickets');
+const revenueTimelineChart = document.getElementById('revenueTimelineChart');
+const ticketTypeChart = document.getElementById('ticketTypeChart');
+const attendanceRatioChart = document.getElementById('attendanceRatioChart');
+const topEventsList = document.getElementById('topEventsList');
 
 // View Toggle Elements
 const gridViewBtn = document.getElementById('gridViewBtn');
@@ -107,11 +153,20 @@ let marker = null;
 let currentLatLng = null;
 let currentView = 'grid'; // Default view is grid
 let allEvents = []; // Store all events for filtering
+let removedMediaIds = [];
+let commentPageState = {};
+let adminUsers = [];
 let notificationsEnabled = false;
 let upcomingEventsNotificationsEnabled = false;
 let newEventsNotificationsEnabled = false;
 let knownEventIds = new Set();
 let notificationCheckIntervalId = null;
+
+const attendanceStatusLabels = {
+  attending: 'سأحضر',
+  maybe: 'ربما',
+  declined: 'غير مهتم'
+};
 
 const formatDate = (value) => {
   const date = new Date(value);
@@ -122,8 +177,264 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+let ticketModalEventId = null;
+
+const openTicketModal = async (eventId, defaultVirtual = false) => {
+  ticketModalEventId = eventId;
+  ticketResult.innerHTML = '';
+  ticketModalTitle.textContent = 'حجز التذكرة';
+  ticketEventInfo.textContent = 'جارٍ تحميل بيانات التذكرة...';
+  selectedSeatInfo = { seatCategory: null, seatNumber: null };
+  isVirtualTicketCheckbox.checked = defaultVirtual;
+  streamUrlInput.value = '';
+  seatMapContainer.innerHTML = 'جارٍ تحميل مخطط المقاعد...';
+  ticketPriceInput.value = '';
+  streamDetails.classList.toggle('hidden', !defaultVirtual);
+
+  if (ticketModal) {
+    ticketModal.classList.remove('hidden');
+  }
+
+  try {
+    const response = await fetchWithAuth(`/api/events/${eventId}/seat-map`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'فشل تحميل مخطط المقاعد');
+    }
+    const data = await response.json();
+    currentTicketEvent = data.event;
+    currentTicketSeatMap = data.seatMap;
+    ticketEventInfo.textContent = `${currentTicketEvent.title} ${currentTicketEvent.isHybrid ? '(البث المباشر متاح)' : ''}`;
+    streamUrlInput.value = currentTicketEvent.streamUrl || '';
+    updateTicketModalInputs();
+    renderSeatMap();
+  } catch (err) {
+    ticketEventInfo.textContent = '';
+    ticketResult.innerHTML = `<p class="error-text">${err.message}</p>`;
+    console.error(err);
+  }
+};
+
+const closeTicketModalHandler = () => {
+  if (ticketModal) {
+    ticketModal.classList.add('hidden');
+  }
+  currentTicketEvent = null;
+  currentTicketSeatMap = null;
+  selectedSeatInfo = { seatCategory: null, seatNumber: null };
+  ticketResult.innerHTML = '';
+};
+
+const updateTicketModalInputs = () => {
+  const isVirtual = isVirtualTicketCheckbox.checked;
+  streamDetails.classList.toggle('hidden', !isVirtual);
+  seatMapContainer.classList.toggle('hidden', isVirtual);
+  if (currentTicketEvent) {
+    ticketPriceInput.value = isVirtual ? (currentTicketEvent.virtualPriceCents || 1500) : (currentTicketSeatMap?.categories?.[0]?.priceCents || 3000);
+  }
+};
+
+const renderSeatMap = () => {
+  if (!currentTicketSeatMap || !currentTicketSeatMap.categories) {
+    seatMapContainer.innerHTML = '<p>لا يوجد مخطط مقاعد متاح حالياً.</p>';
+    return;
+  }
+
+  seatMapContainer.innerHTML = currentTicketSeatMap.categories.map((category) => `
+    <div class="seat-category">
+      <h4>${category.label} — السعر ${category.priceCents} cents</h4>
+      <div class="seat-grid">
+        ${category.seats.map((seat) => `
+          <button type="button" class="seat ${seat.reserved ? 'reserved' : ''} ${selectedSeatInfo.seatCategory === category.id && selectedSeatInfo.seatNumber === seat.number ? 'selected' : ''}" data-category="${category.id}" data-number="${seat.number}" ${seat.reserved ? 'disabled' : ''}>
+            ${seat.number}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+};
+
+const selectSeat = (categoryId, seatNumber) => {
+  selectedSeatInfo = { seatCategory: categoryId, seatNumber };
+  currentTicketSeatMap.categories.forEach((category) => {
+    category.seats.forEach((seat) => {
+      const button = seatMapContainer.querySelector(`button[data-category="${category.id}"][data-number="${seat.number}"]`);
+      if (button) {
+        button.classList.toggle('selected', category.id === categoryId && seat.number === seatNumber);
+      }
+    });
+  });
+  const category = currentTicketSeatMap.categories.find((item) => item.id === categoryId);
+  ticketPriceInput.value = category ? category.priceCents : ticketPriceInput.value;
+};
+
+const reserveTicket = async () => {
+  if (!currentTicketEvent) {
+    return;
+  }
+
+  const isVirtual = isVirtualTicketCheckbox.checked;
+  if (isVirtual && !currentTicketEvent.isHybrid) {
+    ticketResult.innerHTML = '<p class="error-text">هذه الفعالية لا تدعم البث المباشر.</p>';
+    return;
+  }
+
+  if (!isVirtual && (!selectedSeatInfo.seatCategory || !selectedSeatInfo.seatNumber)) {
+    ticketResult.innerHTML = '<p class="error-text">اختر مقعداً قبل التأكيد.</p>';
+    return;
+  }
+
+  try {
+    const response = await fetchWithAuth(`/api/events/${ticketModalEventId}/tickets`, {
+      method: 'POST',
+      body: JSON.stringify({
+        seatCategory: selectedSeatInfo.seatCategory,
+        seatNumber: selectedSeatInfo.seatNumber,
+        isVirtual,
+        priceCents: Number(ticketPriceInput.value),
+        email: currentUser || ''
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'فشل حجز التذكرة');
+    }
+
+    ticketResult.innerHTML = `
+      <p>تم حجز التذكرة بنجاح! رمز التذكرة: <strong>${data.ticketCode}</strong></p>
+      <p><a href="${data.qrUrl}" target="_blank">عرض رمز QR</a> · <a href="${data.pdfUrl}" target="_blank">تحميل التذكرة بصيغة PDF</a></p>
+    `;
+    if (!isVirtual) {
+      currentTicketSeatMap.categories.forEach((category) => {
+        category.seats = category.seats.map((seat) => {
+          if (category.id === selectedSeatInfo.seatCategory && seat.number === selectedSeatInfo.seatNumber) {
+            return { ...seat, reserved: true };
+          }
+          return seat;
+        });
+      });
+      renderSeatMap();
+    }
+  } catch (error) {
+    ticketResult.innerHTML = `<p class="error-text">${error.message}</p>`;
+    console.error(error);
+  }
+};
+
 const saveSession = () => {
   localStorage.setItem('eventAppSession', JSON.stringify({ authToken, currentRole, currentUser }));
+};
+
+const formatCurrency = (cents) => {
+  const amount = Number(cents || 0) / 100;
+  return new Intl.NumberFormat('ar-EG', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0
+  }).format(amount);
+};
+
+const formatNumber = (value) => {
+  return new Intl.NumberFormat('ar-EG').format(Number(value || 0));
+};
+
+const renderBarChart = (container, items) => {
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    container.innerHTML = '<p class="muted-text">لا توجد بيانات كافية للعرض.</p>';
+    return;
+  }
+
+  const maxValue = Math.max(...items.map((item) => item.value)) || 1;
+  items.forEach((item) => {
+    const percent = Math.round((item.value / maxValue) * 100);
+    const chartBar = document.createElement('div');
+    chartBar.className = 'chart-bar';
+    chartBar.innerHTML = `
+      <div class="chart-bar-label">
+        <span>${escapeHtml(item.label)}</span>
+        <span>${escapeHtml(item.subtitle)}</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width: ${percent}%;"></div></div>
+    `;
+    container.appendChild(chartBar);
+  });
+};
+
+const renderTopEvents = (events) => {
+  if (!topEventsList) return;
+  topEventsList.innerHTML = '';
+  if (!events || events.length === 0) {
+    topEventsList.innerHTML = '<p class="muted-text">لا توجد فعاليات مباعة حالياً.</p>';
+    return;
+  }
+
+  events.forEach((event) => {
+    const item = document.createElement('div');
+    item.className = 'top-event-item';
+    item.innerHTML = `
+      <span>${escapeHtml(event.title)}</span>
+      <span>${formatCurrency(event.revenueCents)}</span>
+    `;
+    topEventsList.appendChild(item);
+  });
+};
+
+const renderAdminAnalytics = (data) => {
+  if (analyticsTicketsSold) analyticsTicketsSold.textContent = formatNumber(data.totalTicketsSold);
+  if (analyticsRevenue) analyticsRevenue.textContent = formatCurrency(data.totalRevenueCents);
+  if (analyticsVirtualTickets) analyticsVirtualTickets.textContent = formatNumber(data.totalVirtualTickets);
+  if (analyticsSeatTickets) analyticsSeatTickets.textContent = formatNumber(data.totalSeatTickets);
+
+  renderBarChart(revenueTimelineChart, data.revenueTimeline.map((item) => ({
+    label: item.day,
+    value: item.revenueCents,
+    subtitle: formatCurrency(item.revenueCents)
+  })));
+
+  renderBarChart(ticketTypeChart, data.ticketTypeBreakdown.map((item) => ({
+    label: item.ticketType,
+    value: item.count,
+    subtitle: `${formatNumber(item.count)} تذاكر`
+  })));
+
+  renderBarChart(attendanceRatioChart, data.attendanceOverview.map((item) => ({
+    label: item.status,
+    value: item.count,
+    subtitle: `${formatNumber(item.count)} حالة`
+  })));
+
+  renderTopEvents(data.topEvents);
+};
+
+const loadAnalytics = async () => {
+  if (currentRole !== 'admin') return;
+
+  try {
+    const response = await fetchWithAuth('/api/admin/analytics');
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'فشل تحميل تحليلات المنظمين');
+    }
+    const data = await response.json();
+    renderAdminAnalytics(data);
+  } catch (error) {
+    console.error('Analytics load failed:', error);
+  }
+};
+
+const startAnalyticsPolling = () => {
+  if (analyticsIntervalId) clearInterval(analyticsIntervalId);
+  analyticsIntervalId = setInterval(loadAnalytics, 30000);
+};
+
+const stopAnalyticsPolling = () => {
+  if (analyticsIntervalId) {
+    clearInterval(analyticsIntervalId);
+    analyticsIntervalId = null;
+  }
 };
 
 const loadSession = () => {
@@ -564,13 +875,170 @@ const updateStatistics = () => {
 
   const totalEvents = allEvents.length;
   const upcomingEvents = allEvents.filter(event => new Date(event.date) >= new Date()).length;
-  const totalAttendees = allEvents.reduce((sum, event) => sum + (event.attendees || 0), 0);
+  const totalAttendees = allEvents.reduce((sum, event) => sum + (event.attendingCount || 0), 0);
   const avgAttendees = totalEvents > 0 ? Math.round(totalAttendees / totalEvents) : 0;
 
   document.getElementById('totalEvents').textContent = totalEvents;
   document.getElementById('upcomingEvents').textContent = upcomingEvents;
   document.getElementById('totalAttendees').textContent = totalAttendees;
   document.getElementById('avgAttendees').textContent = avgAttendees;
+};
+
+const renderUsersTable = (users) => {
+  adminUsers = users;
+  if (!users || users.length === 0) {
+    usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">لا يوجد مستخدمين للعرض.</td></tr>';
+    return;
+  }
+
+  usersTableBody.innerHTML = users.map((user) => `
+    <tr>
+      <td>${escapeHtml(user.username)}</td>
+      <td>${escapeHtml(user.email)}</td>
+      <td>${escapeHtml(user.role)}</td>
+      <td>${user.isActivated ? 'مفعل' : 'غير مفعل'}</td>
+      <td class="users-actions-cell">
+        <button type="button" class="button small secondary" data-id="${user.id}" data-action="toggle-activation">${user.isActivated ? 'تعطيل' : 'تفعيل'}</button>
+        ${!user.isActivated ? `<button type="button" class="button small secondary" data-id="${user.id}" data-action="resend-activation">إعادة إرسال التفعيل</button>` : ''}
+        <button type="button" class="button small secondary" data-id="${user.id}" data-action="toggle-role">${user.role === 'admin' ? 'خفض صلاحية' : 'جعل مدير'}</button>
+        <button type="button" class="button small delete-btn" data-id="${user.id}" data-action="delete-user">حذف</button>
+      </td>
+    </tr>
+  `).join('');
+};
+
+const loadUsers = async () => {
+  if (!usersTableBody) return;
+  usersMessage.textContent = '';
+  usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">جارٍ تحميل المستخدمين...</td></tr>';
+  try {
+    const response = await fetchWithAuth('/api/admin/users');
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'فشل تحميل المستخدمين');
+    }
+    const users = await response.json();
+    renderUsersTable(users);
+  } catch (error) {
+    usersMessage.textContent = error.message;
+    usersTableBody.innerHTML = '<tr><td colspan="5" class="empty-state">تعذر تحميل المستخدمين.</td></tr>';
+    console.error(error);
+  }
+};
+
+const updateUser = async (userId, updates) => {
+  const response = await fetchWithAuth(`/api/admin/users/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'فشل تحديث المستخدم');
+  }
+  return response.json();
+};
+
+const deleteUser = async (userId) => {
+  const response = await fetchWithAuth(`/api/admin/users/${userId}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'فشل حذف المستخدم');
+  }
+  return response.json();
+};
+
+const createUser = async (userData) => {
+  const response = await fetchWithAuth('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(userData)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'فشل إنشاء المستخدم');
+  }
+  return response.json();
+};
+
+const resetCreateUserForm = () => {
+  createUserForm.reset();
+  adminRoleSelect.value = 'normal';
+  adminActivateCheckbox.checked = true;
+  createUserMessage.textContent = '';
+};
+
+const handleCreateUser = async (event) => {
+  event.preventDefault();
+  createUserMessage.textContent = '';
+
+  const username = adminUsernameInput.value.trim();
+  const email = adminEmailInput.value.trim();
+  const password = adminPasswordInput.value.trim();
+  const role = adminRoleSelect.value;
+  const isActivated = adminActivateCheckbox.checked;
+
+  if (!username || !email || !password) {
+    createUserMessage.textContent = 'يرجى ملء الحقول المطلوبة.';
+    return;
+  }
+  if (password.length < 6) {
+    createUserMessage.textContent = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.';
+    return;
+  }
+
+  try {
+    await createUser({ username, email, password, role, isActivated });
+    resetCreateUserForm();
+    await loadUsers();
+    createUserMessage.textContent = isActivated
+      ? 'تم إنشاء المستخدم بنجاح.'
+      : 'تم إنشاء المستخدم بنجاح. تم إرسال رابط التفعيل إلى البريد.';
+  } catch (error) {
+    createUserMessage.textContent = error.message;
+    console.error(error);
+  }
+};
+
+const handleUsersAction = async (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  const userId = button.dataset.id;
+  const action = button.dataset.action;
+  if (!userId || !action) return;
+
+  try {
+    if (action === 'toggle-activation') {
+      const user = adminUsers.find((item) => item.id.toString() === userId.toString());
+      if (!user) throw new Error('المستخدم غير موجود');
+      await updateUser(userId, { isActivated: !user.isActivated });
+      await loadUsers();
+    }
+
+    if (action === 'toggle-role') {
+      const user = adminUsers.find((item) => item.id.toString() === userId.toString());
+      if (!user) throw new Error('المستخدم غير موجود');
+      await updateUser(userId, { role: user.role === 'admin' ? 'normal' : 'admin' });
+      await loadUsers();
+    }
+
+    if (action === 'resend-activation') {
+      await fetchWithAuth(`/api/admin/users/${userId}/resend-activation`, { method: 'POST' });
+      await loadUsers();
+      usersMessage.textContent = 'تم إرسال رابط التفعيل للمستخدم.';
+      return;
+    }
+
+    if (action === 'delete-user') {
+      const confirmed = confirm('هل تريد حذف هذا الحساب؟');
+      if (!confirmed) return;
+      await deleteUser(userId);
+      await loadUsers();
+    }
+  } catch (error) {
+    usersMessage.textContent = error.message;
+    console.error(error);
+  }
 };
 
 const showLogin = () => {
@@ -642,9 +1110,12 @@ const showApp = () => {
   registerPanel.classList.add('hidden');
   appPanel.classList.remove('hidden');
   welcomeMessage.textContent = `مرحباً ${currentUser}`;
-  roleMessage.textContent = currentRole === 'admin' ? 'أنت مدير ولديك صلاحية إدارة الفعاليات.' : 'أنت مستخدم عادي ويمكنك حضور الفعاليات.';
+  roleMessage.textContent = currentRole === 'admin' ? 'أنت مدير ولديك صلاحية إدارة الفعاليات والمستخدمين.' : 'أنت مستخدم عادي ويمكنك حضور الفعاليات.';
   if (currentRole === 'admin') {
     adminPanel.classList.remove('hidden');
+    loadUsers();
+    loadAnalytics();
+    startAnalyticsPolling();
   } else {
     adminPanel.classList.add('hidden');
   }
@@ -764,6 +1235,26 @@ const confirmMapLocation = () => {
   closeMapModal();
 };
 
+if (closeTicketModal) {
+  closeTicketModal.addEventListener('click', closeTicketModalHandler);
+}
+if (cancelTicketBtn) {
+  cancelTicketBtn.addEventListener('click', closeTicketModalHandler);
+}
+if (isVirtualTicketCheckbox) {
+  isVirtualTicketCheckbox.addEventListener('change', updateTicketModalInputs);
+}
+if (reserveTicketBtn) {
+  reserveTicketBtn.addEventListener('click', reserveTicket);
+}
+if (seatMapContainer) {
+  seatMapContainer.addEventListener('click', (event) => {
+    const button = event.target.closest('.seat');
+    if (!button || button.disabled) return;
+    selectSeat(button.dataset.category, Number(button.dataset.number));
+  });
+}
+
 const loadEvents = async () => {
   try {
     const showArchivedParam = showArchived.checked ? '?archived=true' : '';
@@ -779,10 +1270,12 @@ const loadEvents = async () => {
   }
 };
 
-const applyFilters = () => {
+const applyFilters = async () => {
   const searchTerm = searchInput.value.toLowerCase().trim();
   const categoryValue = categoryFilter.value;
   const dateValue = dateFilter.value;
+  const districtValue = districtFilter?.value.toLowerCase().trim();
+  const budgetValue = budgetFilter?.value;
 
   let filteredEvents = allEvents.filter(event => {
     // Search filter
@@ -793,6 +1286,8 @@ const applyFilters = () => {
 
     // Category filter
     const matchesCategory = !categoryValue || event.category === categoryValue;
+    const matchesDistrict = !districtValue || (event.district || '').toLowerCase().includes(districtValue);
+    const matchesBudget = matchesBudgetFilter(event, budgetValue);
 
     // Date filter
     let matchesDate = true;
@@ -808,11 +1303,20 @@ const applyFilters = () => {
       }
     }
 
-    return matchesSearch && matchesCategory && matchesDate;
+    const attendanceValue = attendanceFilter?.value || '';
+    let matchesAttendance = true;
+    if (attendanceValue) {
+      matchesAttendance = event.myAttendanceStatus === attendanceValue;
+    }
+
+    return matchesSearch && matchesCategory && matchesDate && matchesAttendance;
   });
 
   eventCount.textContent = `عدد الفعاليات: ${filteredEvents.length} من ${allEvents.length}`;
   eventsList.innerHTML = filteredEvents.length ? filteredEvents.map(renderEventCard).join('') : '<p>لا توجد فعاليات تطابق معايير البحث.</p>';
+  await loadCommentsForEvents();
+  renderWeeklyEvents(filteredEvents);
+  renderTrendingEvents(filteredEvents);
 
   // Update calendar if in calendar view
   if (currentView === 'calendar') {
@@ -820,7 +1324,82 @@ const applyFilters = () => {
   }
 };
 
+const matchesBudgetFilter = (event, budgetValue) => {
+  const minBudget = Number(event.budgetCents || 0);
+  if (!budgetValue) return true;
+  if (budgetValue === 'under50') return minBudget > 0 && minBudget <= 5000;
+  if (budgetValue === 'under100') return minBudget > 0 && minBudget <= 10000;
+  if (budgetValue === 'over100') return minBudget > 10000;
+  return true;
+};
+
+const renderWeeklyEvents = (events) => {
+  if (!weeklyEvents) return;
+  const oneWeekAhead = new Date();
+  oneWeekAhead.setDate(oneWeekAhead.getDate() + 7);
+  const today = new Date();
+
+  const weekEvents = events
+    .filter((event) => {
+      const eventDate = new Date(event.date);
+      return eventDate >= today && eventDate <= oneWeekAhead;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 4);
+
+  weeklyEvents.innerHTML = weekEvents.length
+    ? weekEvents.map((event) => `
+        <article class="highlight-card">
+          <h3>${escapeHtml(event.title)}</h3>
+          <p>${escapeHtml(event.description)}</p>
+          <p><strong>التاريخ:</strong> ${formatDate(event.date)}</p>
+          <p><strong>المنطقة:</strong> ${escapeHtml(event.district || 'غير محدد')}</p>
+          <a href="/event.html?id=${event.id}" class="button small primary">تفاصيل وحجز</a>
+        </article>
+      `).join('')
+    : '<p class="muted-text">لا توجد فعاليات لهذا الأسبوع.</p>';
+};
+
+const renderTrendingEvents = (events) => {
+  if (!trendingEvents) return;
+  const trending = [...events]
+    .sort((a, b) => (b.attendees || 0) - (a.attendees || 0))
+    .slice(0, 4);
+
+  trendingEvents.innerHTML = trending.length
+    ? trending.map((event) => `
+        <article class="highlight-card trending-card">
+          <h3>${escapeHtml(event.title)}</h3>
+          <p>${escapeHtml(event.category)}</p>
+          <p><strong>تذاكر مباعة:</strong> ${event.attendees || 0}</p>
+          <a href="/event.html?id=${event.id}" class="button small secondary">عرض التفاصيل</a>
+        </article>
+      `).join('')
+    : '<p class="muted-text">لا توجد فعاليات رائجة حتى الآن.</p>';
+};
+
 const renderEventCard = (event) => {
+  const attendanceButtons = currentRole
+    ? `
+        <div class="attendance-actions">
+          <button type="button" class="button small attendance-btn ${event.myAttendanceStatus === 'attending' ? 'active' : ''}" data-id="${event.id}" data-status="attending">${attendanceStatusLabels.attending}</button>
+          <button type="button" class="button small attendance-btn ${event.myAttendanceStatus === 'maybe' ? 'active' : ''}" data-id="${event.id}" data-status="maybe">${attendanceStatusLabels.maybe}</button>
+          <button type="button" class="button small attendance-btn ${event.myAttendanceStatus === 'declined' ? 'active' : ''}" data-id="${event.id}" data-status="declined">${attendanceStatusLabels.declined}</button>
+        </div>
+        ${event.myAttendanceStatus ? `<p class="attendance-status">حالتك: ${attendanceStatusLabels[event.myAttendanceStatus] || event.myAttendanceStatus}</p>` : ''}
+      `
+    : '<p class="muted-text">سجل دخول لتحديد حضورك.</p>';
+
+  const ticketActions = currentRole
+    ? `
+        <div class="event-actions">
+          <a href="/event.html?id=${event.id}" class="button action-button primary">تفاصيل وحجز</a>
+          <button type="button" class="button action-button reserve-seat-btn" data-id="${event.id}">اختر مقعد</button>
+          ${event.isHybrid ? `<button type="button" class="button action-button purchase-virtual-btn" data-id="${event.id}">تذكرة افتراضية</button>` : ''}
+        </div>
+      `
+    : '<p class="muted-text">سجل دخول لحجز التذكرة أو مشاهدة البث.</p>';
+
   const actions = currentRole === 'admin'
     ? `
         <div class="event-actions">
@@ -829,11 +1408,7 @@ const renderEventCard = (event) => {
           <button type="button" class="button action-button delete-btn" data-id="${event.id}">حذف</button>
         </div>
       `
-    : `
-        <div class="event-actions">
-          <button type="button" class="button action-button attend-btn" data-id="${event.id}">حضور</button>
-        </div>
-      `;
+    : '';
 
   const mapSection = (event.latitude && event.longitude) ? `
     <div class="event-map">
@@ -842,25 +1417,53 @@ const renderEventCard = (event) => {
         height="${isMobileDevice() ? '180' : '220'}"
         frameborder="0"
         scrolling="no"
-        src="https://www.openstreetmap.org/export/embed.html?bbox=${event.longitude - 0.02}%2C${event.latitude - 0.01}%2C${event.longitude + 0.02}%2C${event.latitude + 0.01}&layer=mapnik&marker=${event.latitude}%2C${event.longitude}">
+        src="https://www.openstreetmap.org/export/embed.html?bbox=${event.longitude - 0.02}%2C${event.latitude - 0.01}%2C${event.longitude + 0.02}%2C${event.latitude + 0.01}&layer=mapnik&marker=${event.latitude}%2C${event.longitude}"
+        onerror="this.style.display='none'; this.closest('.event-map').querySelector('.map-fallback').classList.remove('hidden');">
       </iframe>
+      <div class="map-fallback hidden">
+        <p>لم نتمكن من تحميل الخريطة الخارجية. يمكنك فتح الموقع مباشرة من الرابط أدناه.</p>
+      </div>
       <p class="map-caption"><a href="https://www.openstreetmap.org/?mlat=${event.latitude}&mlon=${event.longitude}#map=15/${event.latitude}/${event.longitude}" target="_blank" rel="noopener">فتح الخريطة كاملة</a></p>
     </div>
   ` : '';
 
-  // Mobile-optimized image handling
-  const imageElement = event.image ? `<img src="/uploads/${event.image}" alt="${escapeHtml(event.title)}" class="event-image" loading="lazy" />` : '';
+  const mediaGallery = (event.media && event.media.length)
+    ? `
+      <div class="event-media-gallery">
+        ${event.media.map((item) => {
+          const src = escapeHtml(item.url);
+          if (item.type === 'video') {
+            const isLocalVideo = item.url.startsWith('/uploads/');
+            return `
+              <div class="media-item media-video">
+                ${isLocalVideo ? `<video controls src="${src}"></video>` : `<a href="${src}" target="_blank" rel="noopener">عرض الفيديو</a>`}
+              </div>
+            `;
+          }
+          return `
+            <div class="media-item media-image">
+              <img src="${src}" alt="${escapeHtml(event.title)}" loading="lazy" />
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : '';
 
   return `
     <article class="event-card">
       <h3>${escapeHtml(event.title)}</h3>
-      ${imageElement}
+      ${mediaGallery}
       <p>${escapeHtml(event.description)}</p>
       <p><strong>المكان:</strong> ${escapeHtml(event.location)}</p>
       ${mapSection}
-      <p class="tag">${escapeHtml(event.category)}</p>
+      ${event.isHybrid ? '<p class="hybrid-label">بث مباشر متاح</p>' : ''}
+      <p class="tag">${escapeHtml(event.category)} · ${escapeHtml(event.district || 'الكل')}</p>
+      <p class="price-tag">الميزانية: ${event.budgetCents ? `${Math.round(event.budgetCents / 100)}$` : 'غير محددة'}</p>
       <time>التاريخ: ${formatDate(event.date)}</time>
-      <p class="attendees-info">عدد الحضور المتوقع: ${event.attendees ?? 0}</p>
+      <p class="attendees-info">المؤكدون: ${event.attendingCount ?? 0} · ربما: ${event.maybeCount ?? 0}</p>
+      <p class="comment-count">عدد التعليقات: ${event.commentCount ?? 0}</p>
+      ${attendanceButtons}
+      ${ticketActions}
 
       <div class="share-section">
         <span class="share-label">مشاركة:</span>
@@ -872,13 +1475,27 @@ const renderEventCard = (event) => {
         </div>
       </div>
 
+      <section class="event-comments-wrapper">
+        <h4>تعليقات المجتمع</h4>
+        <div class="comment-list" id="comments-${event.id}">
+          <p class="muted-text">جارٍ تحميل التعليقات...</p>
+        </div>
+        ${currentRole ? `
+          <div class="comment-form">
+            <textarea class="comment-input" data-event-id="${event.id}" placeholder="اكتب تعليقك هنا..."></textarea>
+            <button type="button" class="button small primary comment-submit-btn" data-event-id="${event.id}">أرسل التعليق</button>
+          </div>
+        ` : '<p class="muted-text">سجل دخول لتتمكن من المشاركة بالتعليقات.</p>'}
+      </section>
+
       ${actions}
     </article>
   `;
 };
 
 const escapeHtml = (unsafe) => {
-  return unsafe
+  const value = unsafe == null ? '' : String(unsafe);
+  return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -886,28 +1503,142 @@ const escapeHtml = (unsafe) => {
     .replace(/'/g, '&#039;');
 };
 
+const formatCommentDate = (createdAt) => {
+  const date = new Date(createdAt);
+  return new Intl.DateTimeFormat('ar-EG', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+};
+
+const renderCommentList = (comments) => {
+  if (!comments || comments.length === 0) {
+    return '<p class="muted-text">لا توجد تعليقات بعد. كن أول من يشارك!</p>';
+  }
+
+  return comments.map((comment) => `
+    <div class="comment-card" data-comment-id="${comment.id}" data-event-id="${comment.eventId}">
+      <div class="comment-header">
+        <strong>${escapeHtml(comment.username)}</strong>
+        <span>${formatCommentDate(comment.createdAt)}</span>
+      </div>
+      <div class="comment-body">
+        <p class="comment-text">${escapeHtml(comment.content)}</p>
+      </div>
+      ${currentRole === 'admin' ? `
+        <div class="comment-controls">
+          <button type="button" class="button tiny comment-edit-btn" data-comment-id="${comment.id}" data-event-id="${comment.eventId}">تعديل</button>
+          <button type="button" class="button tiny danger comment-delete-btn" data-comment-id="${comment.id}" data-event-id="${comment.eventId}">حذف</button>
+        </div>
+      ` : ''}
+    </div>
+  `).join('');
+};
+
+const renderCommentPager = (eventId, page, limit, totalComments) => {
+  const totalPages = Math.ceil(totalComments / limit);
+  if (totalPages <= 1) return '';
+  const currentPage = page;
+
+  return `
+    <div class="comment-pager">
+      <span>الصفحة ${currentPage} من ${totalPages}</span>
+      ${currentPage < totalPages ? `<button type="button" class="button tiny comment-load-more-btn" data-event-id="${eventId}" data-next-page="${currentPage + 1}">عرض المزيد</button>` : ''}
+    </div>
+  `;
+};
+
+const loadComments = async (eventId, page = 1) => {
+  const commentsContainer = document.getElementById(`comments-${eventId}`);
+  if (!commentsContainer) return;
+
+  try {
+    const response = await fetch(`/api/events/${eventId}/comments?page=${page}&limit=5`);
+    if (!response.ok) {
+      commentsContainer.innerHTML = '<p class="muted-text">فشل تحميل التعليقات.</p>';
+      return;
+    }
+    const result = await response.json();
+    const { comments, totalComments, limit: currentLimit } = result;
+    commentPageState[eventId] = {
+      page,
+      limit: currentLimit,
+      totalComments
+    };
+    commentsContainer.innerHTML = `
+      <div class="comment-items">
+        ${renderCommentList(comments)}
+      </div>
+      ${renderCommentPager(eventId, page, currentLimit, totalComments)}
+    `;
+  } catch (error) {
+    commentsContainer.innerHTML = '<p class="muted-text">حدث خطأ أثناء تحميل التعليقات.</p>';
+    console.error(error);
+  }
+};
+
+const loadCommentsForEvents = async () => {
+  await Promise.all(allEvents.map((event) => loadComments(event.id)));
+};
+
 const resetForm = () => {
   editingId = null;
+  removedMediaIds = [];
   formTitle.textContent = 'أضف فعالية جديدة';
   submitButton.textContent = 'إرسال الفعالية';
   cancelEditBtn.hidden = true;
   eventForm.reset();
+  mediaPreviewContainer.innerHTML = '';
+  eventForm.currentImage = null;
+};
+
+const renderMediaPreview = (mediaItems = []) => {
+  if (!mediaItems || mediaItems.length === 0) {
+    mediaPreviewContainer.innerHTML = '';
+    return;
+  }
+
+  mediaPreviewContainer.innerHTML = mediaItems.map((item) => {
+    const isVideo = item.type === 'video';
+    const previewSrc = escapeHtml(item.url);
+    const isLocalVideo = item.type === 'video' && item.url.startsWith('/uploads/');
+    return `
+      <div class="media-preview-item" data-media-id="${item.id}">
+        ${isVideo ? `
+          <div class="media-preview-video">
+            ${isLocalVideo ? `<video controls src="${previewSrc}"></video>` : `<a href="${previewSrc}" target="_blank" rel="noopener">عرض الفيديو</a>`}
+          </div>
+        ` : `
+          <img src="${previewSrc}" alt="وسائط الفعالية" />
+        `}
+        <button type="button" class="button tiny danger remove-media-btn" data-media-id="${item.id}">إزالة</button>
+      </div>
+    `;
+  }).join('');
 };
 
 const fillFormForEdit = (eventData) => {
   editingId = eventData.id;
+  removedMediaIds = [];
   formTitle.textContent = 'تعديل الفعالية';
   submitButton.textContent = 'حفظ التعديل';
   cancelEditBtn.hidden = false;
   eventForm.title.value = eventData.title;
   eventForm.description.value = eventData.description;
   eventForm.location.value = eventData.location;
+  eventForm.district.value = eventData.district || '';
+  eventForm.budgetCents.value = eventData.budgetCents ? Math.round(eventData.budgetCents / 100) : '';
   latitudeInput.value = eventData.latitude || '';
   longitudeInput.value = eventData.longitude || '';
   eventForm.date.value = eventData.date;
   eventForm.category.value = eventData.category;
-  // Store current image for form submission
+  eventForm.videoUrl.value = eventData.media?.find((item) => item.type === 'video' && item.filename === null)?.url || '';
+  // Store current image for form submission when using legacy image field
   eventForm.currentImage = eventData.image;
+  renderMediaPreview(eventData.media || []);
 };
 
 const submitFormData = async (data) => {
@@ -918,17 +1649,27 @@ const submitFormData = async (data) => {
   formData.append('title', data.title);
   formData.append('description', data.description);
   formData.append('location', data.location);
+  formData.append('district', data.district || '');
+  formData.append('budgetCents', data.budgetCents || 0);
   formData.append('latitude', data.latitude || '');
   formData.append('longitude', data.longitude || '');
   formData.append('date', data.date);
   formData.append('category', data.category);
+  formData.append('videoUrl', videoUrlInput.value.trim());
 
-  // Handle image upload
-  const imageInput = document.getElementById('image');
-  if (imageInput.files[0]) {
-    formData.append('image', imageInput.files[0]);
-  } else if (editingId && data.currentImage) {
-    formData.append('currentImage', data.currentImage);
+  const mediaInput = document.getElementById('mediaFiles');
+  if (mediaInput && mediaInput.files.length > 0) {
+    Array.from(mediaInput.files).forEach((file) => {
+      formData.append('mediaFiles', file);
+    });
+  }
+
+  if (editingId && eventForm.currentImage) {
+    formData.append('currentImage', eventForm.currentImage);
+  }
+
+  if (editingId && removedMediaIds.length > 0) {
+    formData.append('removedMediaIds', JSON.stringify(removedMediaIds));
   }
 
   const response = await fetchWithAuth(url, {
@@ -1069,6 +1810,7 @@ logoutButton.addEventListener('click', async () => {
   } catch (error) {
     console.warn('Logout failed', error);
   }
+  stopAnalyticsPolling();
   clearSession();
   showLogin();
   eventsList.innerHTML = '';
@@ -1082,6 +1824,8 @@ eventForm.addEventListener('submit', async (event) => {
     title: eventForm.title.value.trim(),
     description: eventForm.description.value.trim(),
     location: eventForm.location.value.trim(),
+    district: eventForm.district.value.trim(),
+    budgetCents: Number(eventForm.budgetCents.value) * 100 || 0,
     latitude: latitudeInput.value.trim(),
     longitude: longitudeInput.value.trim(),
     date: eventForm.date.value,
@@ -1090,6 +1834,11 @@ eventForm.addEventListener('submit', async (event) => {
 
   if (!data.title || !data.description || !data.location || !data.date) {
     alert('يرجى ملء جميع الحقول.');
+    return;
+  }
+
+  if (!data.latitude || !data.longitude) {
+    alert('يرجى تحديد الموقع عبر الخريطة أو إدخال خط العرض وخط الطول قبل إرسال الفعالية.');
     return;
   }
 
@@ -1109,12 +1858,42 @@ cancelEditBtn.addEventListener('click', () => {
   resetForm();
 });
 
+mediaPreviewContainer.addEventListener('click', (event) => {
+  const removeButton = event.target.closest('.remove-media-btn');
+  if (!removeButton) return;
+
+  const mediaId = removeButton.dataset.mediaId;
+  const previewItem = removeButton.closest('.media-preview-item');
+  if (!previewItem) return;
+
+  if (mediaId && !Number.isNaN(Number(mediaId))) {
+    const mediaIndex = Number(mediaId);
+    if (!removedMediaIds.includes(mediaIndex)) {
+      removedMediaIds.push(mediaIndex);
+    }
+  } else {
+    eventForm.currentImage = null;
+  }
+
+  previewItem.remove();
+});
+
 eventsList.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
   if (!button) return;
 
   const id = button.dataset.id;
   if (!id) return;
+
+  if (button.classList.contains('reserve-seat-btn')) {
+    await openTicketModal(id, false);
+    return;
+  }
+
+  if (button.classList.contains('purchase-virtual-btn')) {
+    await openTicketModal(id, true);
+    return;
+  }
 
   if (button.classList.contains('delete-btn')) {
     const confirmed = confirm('هل تريد حذف هذه الفعالية؟');
@@ -1152,20 +1931,26 @@ eventsList.addEventListener('click', async (event) => {
     }
   }
 
-  if (button.classList.contains('attend-btn')) {
+  if (button.classList.contains('attendance-btn')) {
+    const status = button.dataset.status;
+    const eventId = button.dataset.id;
+    if (!status || !eventId) return;
+
     try {
-      const response = await fetchWithAuth(`/api/events/${id}/attend`, { method: 'POST' });
+      const response = await fetchWithAuth(`/api/events/${eventId}/rsvp`, {
+        method: 'POST',
+        body: JSON.stringify({ status })
+      });
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'فشل تسجيل الحضور');
+        throw new Error(error.error || 'فشل تحديث حالة الحضور');
       }
-      const updated = await response.json();
       await loadEvents();
-      alert(`تم تسجيل الحضور. عدد الحضور الآن ${updated.attendees}.`);
     } catch (error) {
       alert('حدث خطأ: ' + error.message);
       console.error(error);
     }
+    return;
   }
 
   if (button.classList.contains('archive-btn') || button.classList.contains('unarchive-btn')) {
@@ -1187,7 +1972,123 @@ eventsList.addEventListener('click', async (event) => {
     }
   }
 
-  // Share buttons
+  // Comment form submit
+  if (button.classList.contains('comment-submit-btn')) {
+    const eventId = button.dataset.eventId;
+    const textarea = document.querySelector(`textarea.comment-input[data-event-id="${eventId}"]`);
+    if (!textarea) return;
+
+    const content = textarea.value.trim();
+    if (!content) {
+      alert('اكتب تعليقًا قبل الإرسال.');
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(`/api/events/${eventId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ content })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'فشل إضافة التعليق');
+      }
+      textarea.value = '';
+      await loadComments(eventId);
+      await loadEvents();
+    } catch (error) {
+      alert(error.message);
+      console.error(error);
+    }
+    return;
+  }
+
+  if (button.classList.contains('comment-load-more-btn')) {
+    const eventId = button.dataset.eventId;
+    const nextPage = Number(button.dataset.nextPage) || 1;
+    await loadComments(eventId, nextPage);
+    return;
+  }
+
+  if (button.classList.contains('comment-edit-btn')) {
+    const commentId = button.dataset.commentId;
+    const eventId = button.dataset.eventId;
+    const commentCard = document.querySelector(`.comment-card[data-comment-id="${commentId}"]`);
+    if (!commentCard) return;
+
+    const body = commentCard.querySelector('.comment-body');
+    const contentText = body.querySelector('.comment-text').textContent;
+    body.innerHTML = `
+      <textarea class="comment-edit-input" data-comment-id="${commentId}" data-event-id="${eventId}">${escapeHtml(contentText)}</textarea>
+      <div class="comment-edit-actions">
+        <button type="button" class="button tiny primary comment-save-btn" data-comment-id="${commentId}" data-event-id="${eventId}">حفظ</button>
+        <button type="button" class="button tiny comment-cancel-btn" data-comment-id="${commentId}" data-event-id="${eventId}">إلغاء</button>
+      </div>
+    `;
+    return;
+  }
+
+  if (button.classList.contains('comment-save-btn')) {
+    const commentId = button.dataset.commentId;
+    const eventId = button.dataset.eventId;
+    const textarea = document.querySelector(`textarea.comment-edit-input[data-comment-id="${commentId}"]`);
+    if (!textarea) return;
+
+    const content = textarea.value.trim();
+    if (!content) {
+      alert('التعليق لا يمكن أن يكون فارغاً.');
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(`/api/comments/${commentId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'فشل تعديل التعليق');
+      }
+      await loadComments(eventId, commentPageState[eventId]?.page || 1);
+    } catch (error) {
+      alert(error.message);
+      console.error(error);
+    }
+    return;
+  }
+
+  if (button.classList.contains('comment-cancel-btn')) {
+    const eventId = button.dataset.eventId;
+    await loadComments(eventId, commentPageState[eventId]?.page || 1);
+    return;
+  }
+
+  if (button.classList.contains('comment-delete-btn')) {
+    const commentId = button.dataset.commentId;
+    const eventId = button.dataset.eventId;
+    if (!confirm('هل أنت متأكد أنك تريد حذف هذا التعليق؟')) return;
+
+    try {
+      const response = await fetchWithAuth(`/api/comments/${commentId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'فشل حذف التعليق');
+      }
+      const currentPage = commentPageState[eventId]?.page || 1;
+      const totalComments = (commentPageState[eventId]?.totalComments || 1) - 1;
+      const currentLimit = commentPageState[eventId]?.limit || 5;
+      const newPage = currentPage > 1 && totalComments <= currentLimit * (currentPage - 1) ? currentPage - 1 : currentPage;
+      await loadComments(eventId, newPage);
+      await loadEvents();
+    } catch (error) {
+      alert(error.message);
+      console.error(error);
+    }
+    return;
+  }
+
   if (button.classList.contains('share-btn')) {
     const event = allEvents.find(e => e.id.toString() === id.toString());
     if (!event) return;
@@ -1225,10 +2126,22 @@ eventsList.addEventListener('click', async (event) => {
 searchInput.addEventListener('input', applyFilters);
 clearSearch.addEventListener('click', () => {
   searchInput.value = '';
+  if (attendanceFilter) {
+    attendanceFilter.value = '';
+  }
+  if (districtFilter) {
+    districtFilter.value = '';
+  }
+  if (budgetFilter) {
+    budgetFilter.value = '';
+  }
   applyFilters();
 });
 categoryFilter.addEventListener('change', applyFilters);
 dateFilter.addEventListener('change', applyFilters);
+districtFilter?.addEventListener('change', applyFilters);
+budgetFilter?.addEventListener('change', applyFilters);
+attendanceFilter?.addEventListener('change', applyFilters);
 showArchived.addEventListener('change', loadEvents);
 
 // Theme Event Listener
@@ -1270,6 +2183,15 @@ notificationModal.addEventListener('click', (event) => {
   }
 });
 
+const confirmLocationBtn = document.getElementById('confirmLocation');
+const cancelLocationBtn = document.getElementById('cancelLocation');
+if (confirmLocationBtn) {
+  confirmLocationBtn.addEventListener('click', confirmMapLocation);
+}
+if (cancelLocationBtn) {
+  cancelLocationBtn.addEventListener('click', closeMapModal);
+}
+
 // Mobile Navigation Event Listeners
 mobileMenuToggle.addEventListener('click', toggleMobileMenu);
 mobileNavClose.addEventListener('click', closeMobileMenu);
@@ -1282,6 +2204,16 @@ mobileNavLinks.forEach(link => {
     navigateToPanel(panelId);
   });
 });
+
+if (refreshUsersBtn) {
+  refreshUsersBtn.addEventListener('click', loadUsers);
+}
+if (createUserForm) {
+  createUserForm.addEventListener('submit', handleCreateUser);
+}
+if (usersTableBody) {
+  usersTableBody.addEventListener('click', handleUsersAction);
+}
 
 // Close mobile menu when clicking outside
 mobileNav.addEventListener('click', (event) => {
@@ -1355,6 +2287,12 @@ const initialize = async () => {
 
     // Initialize mobile optimizations
     optimizeForMobile();
+
+    if (geocodeBtn) {
+      geocodeBtn.addEventListener('click', async () => {
+        await openMapModal();
+      });
+    }
 
     // Register service worker for PWA support
     await registerServiceWorker();

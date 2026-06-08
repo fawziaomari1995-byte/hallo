@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>الدفع - فعاليات درعا</title>
+  <link rel="stylesheet" href="styles.css?v=2" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <a href="/" class="button secondary small">الرئيسية</a>
+      <h1>الدفع والحجز</h1>
+    </div>
+  </header>
+
+  <main class="container page-panel">
+    <section class="panel panel-highlight">
+      <div class="section-header">
+        <h2>معلومات الحجز</h2>
+        <p class="muted-text">اختر مقعداً متاحاً أو تذكرة افتراضية، ثم أتمم الدفع بسهولة.</p>
+      </div>
+      <div id="checkoutLoading" class="loading-state">جارٍ تحميل بيانات الفعالية...</div>
+      <div id="checkoutContent" class="hidden">
+        <div id="eventSummary" class="checkout-summary"></div>
+        <div id="seatMapContainer" class="seat-map-container"></div>
+
+        <form id="checkoutForm" class="checkout-form">
+          <div class="form-group">
+            <label>طريقة الدفع</label>
+            <select id="paymentProvider" name="paymentProvider" class="filter-select">
+              <option value="card">بطاقة بنكية</option>
+              <option value="local-wallet">محفظة محلية</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="email">البريد الإلكتروني (اختياري)</label>
+            <input id="email" name="email" type="email" placeholder="example@mail.com" />
+          </div>
+          <div class="form-group">
+            <label for="ticketType">نوع التذكرة</label>
+            <select id="ticketType" name="ticketType" class="filter-select"></select>
+          </div>
+          <div class="form-group">
+            <label for="ticketPrice">السعر النهائي</label>
+            <input id="ticketPrice" name="ticketPrice" type="text" readonly />
+          </div>
+          <button type="submit" class="button primary">تأكيد الحجز والدفع</button>
+        </form>
+        <div id="confirmationMessage" class="ticket-result"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>© 2026 فعالية درعا</p>
+  </footer>
