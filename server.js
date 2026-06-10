@@ -13,7 +13,11 @@ const Stripe = require('stripe');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const dbFile = process.env.RENDER ? '/tmp/events.db' : path.join(__dirname, 'db', 'events.db');
+const dbDir = process.env.RENDER ? '/tmp' : path.join(__dirname, 'db');
+const dbFile = path.join(dbDir, 'events.db');
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 // Configure multer for file uploads
 const uploadsDir = process.env.RENDER ? '/tmp/uploads' : path.join(__dirname, 'public', 'uploads');
