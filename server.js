@@ -9,6 +9,7 @@ const fs = require('fs');
 const QRCode = require('qrcode');
 const PDFDocument = require('pdfkit');
 const Stripe = require('stripe');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -64,8 +65,8 @@ const attachOptionalUser = (req, res, next) => {
 app.use(attachOptionalUser);
 
 const users = [
-  { username: 'admin', password: 'admin123', role: 'admin' },
-  { username: 'user', password: 'user123', role: 'normal' }
+  { id: 0, username: 'admin', password: 'admin123', role: 'admin' },
+  { id: -1, username: 'user', password: 'user123', role: 'normal' }
 ];
 const sessions = new Map();
 let mailTransporter = null;
@@ -567,7 +568,7 @@ app.post('/api/login', async (req, res) => {
   const hardcodedUser = users.find((item) => item.username === username);
   if (hardcodedUser && hardcodedUser.password === password) {
     const token = generateToken();
-    sessions.set(token, { id: null, username: hardcodedUser.username, role: hardcodedUser.role, email: null });
+    sessions.set(token, { id: hardcodedUser.id, username: hardcodedUser.username, role: hardcodedUser.role, email: null });
     return res.json({ token, username: hardcodedUser.username, role: hardcodedUser.role });
   }
 
@@ -909,30 +910,40 @@ app.get('/api/events/:id', (req, res) => {
         db.get(
           `SELECT COUNT(*) AS ticketCount FROM tickets t
            LEFT JOIN events e ON e.id = t.eventId
-           WHERE t.eventId = ? AND t.userId = ? AND t.status IN ('paid', 'scanned') AND date(e.date) <= date(?)`,
-          [id, req.user.id, now],
+             WHERE t.eventId = ? AND t.userId = ? AND t.status IN ('paid', 'scanned')`,
+          [id, req.user.id],
           (err4, ticketRow) => {
             if (err4) {
               return res.status(500).json({ error: err4.message });
             }
 
-            db.get('SELECT COUNT(*) AS userReviewed FROM comments WHERE eventId = ? AND username = ?', [id, req.user.username], (err5, commentRow) => {
-              if (err5) {
-                return res.status(500).json({ error: err5.message });
+            // Also check attendance table: allow reviews for users who marked they were attending
+            db.get('SELECT COUNT(*) AS attendanceCount FROM attendance WHERE eventId = ? AND userId = ? AND status = ?', [id, req.user.id, 'attending'], (errA, attendRow) => {
+              if (errA) {
+                return res.status(500).json({ error: errA.message });
               }
 
-              const hasTicket = ticketRow && ticketRow.ticketCount > 0;
-              const hasReviewed = commentRow && commentRow.userReviewed > 0;
-              const eventDate = row.date ? new Date(row.date) : null;
-              const nowDate = new Date();
-              const canReview = hasTicket && eventDate && eventDate <= nowDate;
+              db.get('SELECT COUNT(*) AS userReviewed FROM comments WHERE eventId = ? AND username = ?', [id, req.user.username], (err5, commentRow) => {
+                if (err5) {
+                  return res.status(500).json({ error: err5.message });
+                }
 
-              res.json({
-                ...eventData,
-                myAttendanceStatus: statusRow ? statusRow.status : null,
-                userHasTicket: hasTicket,
-                userHasCommented: hasReviewed,
-                userCanReview: canReview
+                const hasTicket = ticketRow && ticketRow.ticketCount > 0;
+                const hasAttendance = attendRow && attendRow.attendanceCount > 0;
+                const hasReviewed = commentRow && commentRow.userReviewed > 0;
+                const eventDate = row.date ? new Date(row.date) : null;
+                const nowDate = new Date();
+                // Allow review if user had a valid ticket OR marked attendance; still require event date to be on/after event
+                const canReview = (hasTicket || hasAttendance) && eventDate && eventDate <= nowDate;
+
+                res.json({
+                  ...eventData,
+                  myAttendanceStatus: statusRow ? statusRow.status : null,
+                  userHasTicket: hasTicket,
+                  userHasAttendance: hasAttendance,
+                  userHasCommented: hasReviewed,
+                  userCanReview: canReview
+                });
               });
             });
           }
@@ -1075,19 +1086,11 @@ app.post('/api/events/:id/comments', requireAuth, (req, res) => {
   const ratingValue = Number.isInteger(numericRating) && numericRating >= 1 && numericRating <= 5 ? numericRating : null;
   const now = new Date().toISOString();
 
-  db.get(
-    `SELECT 1 FROM tickets t
-     LEFT JOIN events e ON e.id = t.eventId
-     WHERE t.eventId = ? AND t.userId = ? AND t.status IN ('paid', 'scanned') AND date(e.date) <= date(?) LIMIT 1`,
-    [id, req.user.id, now],
-    (err2, ticketRow) => {
-      if (err2) {
-        return res.status(500).json({ error: err2.message });
-      }
-      if (!ticketRow) {
-        return res.status(403).json({ error: 'غير مسموح بإضافة مراجعة لهذه الفعالية' });
-      }
+  // First, allow users who marked attendance as 'attending' to post reviews
+  db.get('SELECT status FROM attendance WHERE eventId = ? AND userId = ? LIMIT 1', [id, req.user.id], (errA, attendRow) => {
+    if (errA) return res.status(500).json({ error: errA.message });
 
+    const proceedToInsert = () => {
       db.get('SELECT COUNT(*) AS existing FROM comments WHERE eventId = ? AND username = ?', [id, req.user.username], (err3, existingRow) => {
         if (err3) {
           return res.status(500).json({ error: err3.message });
@@ -1115,8 +1118,30 @@ app.post('/api/events/:id/comments', requireAuth, (req, res) => {
           }
         );
       });
+    };
+
+    if (attendRow && attendRow.status === 'attending') {
+      // User marked attendance — allow posting
+      return proceedToInsert();
     }
-  );
+
+    // Otherwise, fall back to checking for a valid paid/scanned ticket (and that event date passed)
+    db.get(
+      `SELECT 1 FROM tickets t
+       LEFT JOIN events e ON e.id = t.eventId
+       WHERE t.eventId = ? AND t.userId = ? AND t.status IN ('paid', 'scanned') AND date(e.date) <= date(?) LIMIT 1`,
+      [id, req.user.id, now],
+      (err2, ticketRow) => {
+        if (err2) {
+          return res.status(500).json({ error: err2.message });
+        }
+        if (!ticketRow) {
+          return res.status(403).json({ error: 'غير مسموح بإضافة مراجعة لهذه الفعالية' });
+        }
+        return proceedToInsert();
+      }
+    );
+  });
 });
 
 app.post('/api/events/:id/attend', requireAuth, (req, res) => {
@@ -1690,36 +1715,48 @@ app.post('/api/events/:id/tickets', requireAuth, async (req, res) => {
       });
     };
 
-    if (resolvedVirtual) {
-      createTicketRecord();
-    } else {
-      if (!seatCategory || !seatLayout[seatCategory]) {
-        return res.status(400).json({ error: 'يرجى اختيار فئة المقعد الصحيحة.' });
-      }
-      if (!seatNumber || Number.isNaN(Number(seatNumber))) {
-        return res.status(400).json({ error: 'يرجى اختيار رقم المقعد.' });
-      }
-      selectedSeatNumber = Number(seatNumber);
-      const category = seatLayout[seatCategory];
-      if (selectedSeatNumber < category.start || selectedSeatNumber > category.end) {
-        return res.status(400).json({ error: 'رقم المقعد خارج نطاق الفئة المختارة.' });
-      }
-      amountCents = amountCents || category.defaultPrice;
-
-      if (!amountCents || amountCents <= 0) {
-        return res.status(400).json({ error: 'السعر يجب أن يكون أكبر من صفر.' });
-      }
-
-      db.get('SELECT id FROM tickets WHERE eventId = ? AND seatNumber = ? AND isVirtual = 0 AND status = ?', [id, selectedSeatNumber, 'paid'], (seatErr, existing) => {
-        if (seatErr) {
-          return res.status(500).json({ error: seatErr.message });
+    const checkExistingTicketAndCreate = () => {
+      db.get('SELECT id FROM tickets WHERE eventId = ? AND userId = ? AND status IN (\'paid\', \'scanned\') LIMIT 1', [id, req.user.id], (existingErr, existingTicket) => {
+        if (existingErr) {
+          return res.status(500).json({ error: existingErr.message });
         }
-        if (existing) {
-          return res.status(409).json({ error: 'المقعد محجوز بالفعل. اختر مقعداً آخر.' });
+        if (existingTicket) {
+          return res.status(409).json({ error: 'لقد حجزت هذه الفعالية بالفعل.' });
         }
-        createTicketRecord();
+
+        if (resolvedVirtual) {
+          return createTicketRecord();
+        }
+        if (!seatCategory || !seatLayout[seatCategory]) {
+          return res.status(400).json({ error: 'يرجى اختيار فئة المقعد الصحيحة.' });
+        }
+        if (!seatNumber || Number.isNaN(Number(seatNumber))) {
+          return res.status(400).json({ error: 'يرجى اختيار رقم المقعد.' });
+        }
+        selectedSeatNumber = Number(seatNumber);
+        const category = seatLayout[seatCategory];
+        if (selectedSeatNumber < category.start || selectedSeatNumber > category.end) {
+          return res.status(400).json({ error: 'رقم المقعد خارج نطاق الفئة المختارة.' });
+        }
+        amountCents = amountCents || category.defaultPrice;
+
+        if (!amountCents || amountCents <= 0) {
+          return res.status(400).json({ error: 'السعر يجب أن يكون أكبر من صفر.' });
+        }
+
+        db.get('SELECT id FROM tickets WHERE eventId = ? AND seatNumber = ? AND isVirtual = 0 AND status = ?', [id, selectedSeatNumber, 'paid'], (seatErr, existing) => {
+          if (seatErr) {
+            return res.status(500).json({ error: seatErr.message });
+          }
+          if (existing) {
+            return res.status(409).json({ error: 'المقعد محجوز بالفعل. اختر مقعداً آخر.' });
+          }
+          createTicketRecord();
+        });
       });
-    }
+    };
+
+    checkExistingTicketAndCreate();
   });
 });
 
@@ -1862,7 +1899,11 @@ app.get('*', (req, res) => {
 
 // Create a Stripe Checkout session for purchasing tickets
 app.post('/api/events/:id/checkout', async (req, res) => {
-  if (!stripe) return res.status(500).json({ error: 'Stripe not configured on server' });
+  if (!stripe) {
+    return res.status(503).json({
+      error: 'Stripe غير مهيأ. يرجى ضبط المتغير البيئي STRIPE_SECRET_KEY أو إضافة ملف .env بالقيمة الصحيحة.'
+    });
+  }
   const { id } = req.params;
   const { price_cents, ticket_type = 'general', quantity = 1 } = req.body;
 
