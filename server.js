@@ -25,7 +25,10 @@ require('dotenv').config();
 // Express application setup for the event management backend.
 // This server serves the public SPA, handles API requests, and manages SQLite storage.
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
+const HOST = process.env.HOST && process.env.HOST !== 'localhost' && process.env.HOST !== '127.0.0.1'
+  ? process.env.HOST
+  : '0.0.0.0';
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 const dbDir = process.env.RENDER ? '/tmp' : path.join(__dirname, 'db');
 const dbFile = path.join(dbDir, 'events.db');
@@ -51,6 +54,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
   lastModified: false,
   maxAge: 0
 }));
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 app.get('/about', (req, res) => {
   res.redirect('/about.html');
 });
@@ -2147,8 +2153,8 @@ const startApp = async () => {
 };
 
 const startServer = (port, maxRetries = 5) => {
-  const server = app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+  const server = app.listen(port, HOST, () => {
+    console.log(`Server running at http://${HOST}:${port}`);
   });
 
   server.on('error', (err) => {
